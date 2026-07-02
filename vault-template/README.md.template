@@ -7,7 +7,7 @@ Granola/etc. A daily pipeline enriches, tags, and links notes into a growing
 Obsidian graph, using Claude Code as the only thing that ever touches note
 content over the network.
 
-Scaffolded by [meeting-graph](https://github.com/AndyMDH/meeting-graph).
+Scaffolded by [Cortex](https://github.com/AndyMDH/cortex).
 
 ## Getting started (day one)
 
@@ -36,6 +36,10 @@ Scaffolded by [meeting-graph](https://github.com/AndyMDH/meeting-graph).
    ```
    You'll also get a macOS notification when a run finishes, summarizing what
    it did (see "Running the pipeline").
+6. **Check your setup any time**: `90-System/doctor.sh` verifies `claude`
+   and `git` are on PATH, Obsidian is installed, the vault structure and
+   skills are intact, and whether the daily schedule is loaded — useful
+   whenever something seems to not be working.
 
 ## Quick capture (skip opening Obsidian first)
 
@@ -101,19 +105,19 @@ Manual run:
 ```
 
 The pipeline can also run automatically once a day via launchd (see
-`90-System/com.meeting-graph.pipeline.plist`, installed at
-`~/Library/LaunchAgents/com.meeting-graph.pipeline.plist` if you chose to
+`90-System/com.cortex.pipeline.plist`, installed at
+`~/Library/LaunchAgents/com.cortex.pipeline.plist` if you chose to
 load it during install):
 
 ```bash
 # load (start scheduling)
-launchctl load ~/Library/LaunchAgents/com.meeting-graph.pipeline.plist
+launchctl load ~/Library/LaunchAgents/com.cortex.pipeline.plist
 
 # unload (stop scheduling)
-launchctl unload ~/Library/LaunchAgents/com.meeting-graph.pipeline.plist
+launchctl unload ~/Library/LaunchAgents/com.cortex.pipeline.plist
 
 # trigger one run immediately, outside the schedule
-launchctl start local.meeting-graph.pipeline
+launchctl start local.cortex.pipeline
 ```
 
 If the machine is asleep at the scheduled time, launchd runs the missed job

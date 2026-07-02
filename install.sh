@@ -4,8 +4,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE_DIR="$SCRIPT_DIR/vault-template"
 
-echo "meeting-graph installer"
-echo "========================"
+DEFAULT_VAULT_PATH="$HOME/Obsidian/Cortex"
+DEFAULT_TAGS="project, internal, external"
+DEFAULT_RUN_TIME="18:30"
+DEFAULT_ALIAS="cortex-run"
+
+NONINTERACTIVE="N"
+for arg in "$@"; do
+  case "$arg" in
+    -y|--yes) NONINTERACTIVE="Y" ;;
+    -h|--help)
+      echo "Usage: ./install.sh [-y|--yes]"
+      echo
+      echo "  -y, --yes   Non-interactive: scaffold with defaults, skip git and"
+      echo "              launchd setup. Re-run without this flag any time to"
+      echo "              customize, or edit the vault directly afterwards."
+      exit 0
+      ;;
+  esac
+done
+
+echo "Cortex installer"
+echo "================="
 echo
 
 # --- Dependency checks -------------------------------------------------
@@ -21,53 +41,74 @@ if ! command -v git >/dev/null 2>&1; then
   echo "Warning: 'git' not found on PATH. Git sync setup will be skipped."
 fi
 
-# --- Prompts -------------------------------------------------------------
+# --- Prompts (or defaults) ------------------------------------------------
 
-read -rp "Where should the vault live? [$HOME/Obsidian/MeetingGraph]: " VAULT_PATH
-VAULT_PATH="${VAULT_PATH:-$HOME/Obsidian/MeetingGraph}"
-VAULT_PATH="${VAULT_PATH/#\~/$HOME}"
-VAULT_NAME="$(basename "$VAULT_PATH")"
+if [ "$NONINTERACTIVE" = "Y" ]; then
+  VAULT_PATH="$DEFAULT_VAULT_PATH"
+  STARTER_TAGS="$DEFAULT_TAGS"
+  RUN_TIME="$DEFAULT_RUN_TIME"
+  ALIAS_NAME="$DEFAULT_ALIAS"
+  COPY_DEMOS="Y"
+  SETUP_GIT="N"
+  CREATE_GH_REPO="N"
+  LOAD_LAUNCHD="N"
 
-if [ -e "$VAULT_PATH" ] && [ -n "$(ls -A "$VAULT_PATH" 2>/dev/null)" ]; then
-  echo "Error: $VAULT_PATH already exists and is not empty. Choose a different path."
-  exit 1
+  echo "Non-interactive install - using defaults:"
+  echo "  Vault path:      $VAULT_PATH"
+  echo "  Starter tags:    $STARTER_TAGS"
+  echo "  Daily run time:  $RUN_TIME"
+  echo "  Alias:           $ALIAS_NAME"
+  echo "  Demo transcripts: yes   Git sync: no   Daily schedule: no"
+  echo "  (re-run ./install.sh without -y any time to customize instead)"
+  echo
+else
+  read -rp "Where should the vault live? [$DEFAULT_VAULT_PATH]: " VAULT_PATH
+  VAULT_PATH="${VAULT_PATH:-$DEFAULT_VAULT_PATH}"
+  VAULT_PATH="${VAULT_PATH/#\~/$HOME}"
+
+  read -rp "Starter tags, comma-separated [$DEFAULT_TAGS]: " STARTER_TAGS
+  STARTER_TAGS="${STARTER_TAGS:-$DEFAULT_TAGS}"
+
+  read -rp "Daily run time, 24h HH:MM [$DEFAULT_RUN_TIME]: " RUN_TIME
+  RUN_TIME="${RUN_TIME:-$DEFAULT_RUN_TIME}"
+
+  read -rp "Alias name for manual runs [$DEFAULT_ALIAS]: " ALIAS_NAME
+  ALIAS_NAME="${ALIAS_NAME:-$DEFAULT_ALIAS}"
+
+  read -rp "Copy demo transcripts into 00-Inbox so you can try it immediately? [Y/n]: " COPY_DEMOS
+  COPY_DEMOS="${COPY_DEMOS:-Y}"
+
+  SETUP_GIT="N"
+  if command -v git >/dev/null 2>&1; then
+    read -rp "Set up a dedicated git repo for this vault now? [y/N]: " SETUP_GIT
+    SETUP_GIT="${SETUP_GIT:-N}"
+  fi
+
+  CREATE_GH_REPO="N"
+  if [[ "$SETUP_GIT" =~ ^[Yy] ]] && command -v gh >/dev/null 2>&1; then
+    read -rp "Create a private GitHub repo and push to it too? [y/N]: " CREATE_GH_REPO
+    CREATE_GH_REPO="${CREATE_GH_REPO:-N}"
+    if [[ "$CREATE_GH_REPO" =~ ^[Yy] ]]; then
+      read -rp "GitHub repo name [$(basename "$VAULT_PATH")]: " GH_REPO_NAME
+      GH_REPO_NAME="${GH_REPO_NAME:-$(basename "$VAULT_PATH")}"
+    fi
+  fi
+
+  LOAD_LAUNCHD="N"
+  read -rp "Load the daily launchd job now? [y/N]: " LOAD_LAUNCHD
+  LOAD_LAUNCHD="${LOAD_LAUNCHD:-N}"
 fi
 
-read -rp "Starter tags, comma-separated [project, internal, external]: " STARTER_TAGS
-STARTER_TAGS="${STARTER_TAGS:-project, internal, external}"
-
-read -rp "Daily run time, 24h HH:MM [18:30]: " RUN_TIME
-RUN_TIME="${RUN_TIME:-18:30}"
+VAULT_NAME="$(basename "$VAULT_PATH")"
 RUN_HOUR="${RUN_TIME%%:*}"
 RUN_MINUTE="${RUN_TIME##*:}"
 RUN_HOUR=$((10#$RUN_HOUR))
 RUN_MINUTE=$((10#$RUN_MINUTE))
 
-read -rp "Alias name for manual runs [meeting-graph-run]: " ALIAS_NAME
-ALIAS_NAME="${ALIAS_NAME:-meeting-graph-run}"
-
-read -rp "Copy demo transcripts into 00-Inbox so you can try it immediately? [Y/n]: " COPY_DEMOS
-COPY_DEMOS="${COPY_DEMOS:-Y}"
-
-SETUP_GIT="N"
-if command -v git >/dev/null 2>&1; then
-  read -rp "Set up a dedicated git repo for this vault now? [y/N]: " SETUP_GIT
-  SETUP_GIT="${SETUP_GIT:-N}"
+if [ -e "$VAULT_PATH" ] && [ -n "$(ls -A "$VAULT_PATH" 2>/dev/null)" ]; then
+  echo "Error: $VAULT_PATH already exists and is not empty. Choose a different path."
+  exit 1
 fi
-
-CREATE_GH_REPO="N"
-if [[ "$SETUP_GIT" =~ ^[Yy] ]] && command -v gh >/dev/null 2>&1; then
-  read -rp "Create a private GitHub repo and push to it too? [y/N]: " CREATE_GH_REPO
-  CREATE_GH_REPO="${CREATE_GH_REPO:-N}"
-  if [[ "$CREATE_GH_REPO" =~ ^[Yy] ]]; then
-    read -rp "GitHub repo name [$VAULT_NAME]: " GH_REPO_NAME
-    GH_REPO_NAME="${GH_REPO_NAME:-$VAULT_NAME}"
-  fi
-fi
-
-LOAD_LAUNCHD="N"
-read -rp "Load the daily launchd job now? [y/N]: " LOAD_LAUNCHD
-LOAD_LAUNCHD="${LOAD_LAUNCHD:-N}"
 
 # --- Scaffold --------------------------------------------------------------
 
@@ -100,16 +141,29 @@ mv "$VAULT_PATH/90-System/quick-capture.sh.template" "$VAULT_PATH/90-System/quic
 substitute "$VAULT_PATH/90-System/quick-capture.sh"
 chmod +x "$VAULT_PATH/90-System/quick-capture.sh"
 
-mv "$VAULT_PATH/90-System/com.meeting-graph.pipeline.plist.template" \
-   "$VAULT_PATH/90-System/com.meeting-graph.pipeline.plist"
-substitute "$VAULT_PATH/90-System/com.meeting-graph.pipeline.plist"
+mv "$VAULT_PATH/90-System/com.cortex.pipeline.plist.template" \
+   "$VAULT_PATH/90-System/com.cortex.pipeline.plist"
+substitute "$VAULT_PATH/90-System/com.cortex.pipeline.plist"
 
 mv "$VAULT_PATH/README.md.template" "$VAULT_PATH/README.md"
 substitute "$VAULT_PATH/README.md"
 
 substitute "$VAULT_PATH/30-Tags/fragment.md"
 
+chmod +x "$VAULT_PATH/90-System/doctor.sh"
+
 touch "$VAULT_PATH/90-System/pipeline.log"
+
+# Record install-time settings so `update.sh` can re-substitute templates
+# later without re-asking every question.
+cat > "$VAULT_PATH/90-System/.cortex-config" <<EOF
+VAULT_PATH=$VAULT_PATH
+VAULT_NAME=$VAULT_NAME
+ALIAS_NAME=$ALIAS_NAME
+CLAUDE_DIR=$CLAUDE_DIR
+RUN_HOUR=$RUN_HOUR
+RUN_MINUTE=$RUN_MINUTE
+EOF
 
 # Seed starter tags
 IFS=',' read -ra TAGS <<< "$STARTER_TAGS"
@@ -161,7 +215,7 @@ if [[ "$SETUP_GIT" =~ ^[Yy] ]]; then
 .trash/
 EOF
     git add -A
-    git commit -q -m "Initial commit: meeting-graph vault"
+    git commit -q -m "Initial commit: Cortex vault"
     echo "Initialized a dedicated git repo at $VAULT_PATH/.git"
     TOPLEVEL="$(git rev-parse --show-toplevel)"
     if [ "$TOPLEVEL" != "$VAULT_PATH" ]; then
@@ -183,14 +237,14 @@ fi
 
 # --- launchd -------------------------------------------------------------
 
-PLIST_DEST="$HOME/Library/LaunchAgents/com.meeting-graph.pipeline.plist"
+PLIST_DEST="$HOME/Library/LaunchAgents/com.cortex.pipeline.plist"
 if [[ "$LOAD_LAUNCHD" =~ ^[Yy] ]]; then
-  cp "$VAULT_PATH/90-System/com.meeting-graph.pipeline.plist" "$PLIST_DEST"
+  cp "$VAULT_PATH/90-System/com.cortex.pipeline.plist" "$PLIST_DEST"
   launchctl load "$PLIST_DEST"
   echo "Loaded launchd job: runs daily at $RUN_TIME."
 else
   echo "Skipped launchd. To enable the daily run later:"
-  echo "  cp \"$VAULT_PATH/90-System/com.meeting-graph.pipeline.plist\" \"$PLIST_DEST\""
+  echo "  cp \"$VAULT_PATH/90-System/com.cortex.pipeline.plist\" \"$PLIST_DEST\""
   echo "  launchctl load \"$PLIST_DEST\""
 fi
 
@@ -198,6 +252,9 @@ fi
 
 echo
 echo "Done. Vault created at: $VAULT_PATH"
+echo
+echo "Run the doctor script any time to check your setup:"
+echo "  $VAULT_PATH/90-System/doctor.sh"
 echo
 echo "Next steps (manual, need the Obsidian/dictation-tool GUIs):"
 echo "  1. open -a Obsidian \"$VAULT_PATH\""
@@ -217,3 +274,6 @@ echo "Optional: $VAULT_PATH/90-System/quick-capture.sh creates+opens a new"
 echo "00-Inbox note without switching to Obsidian first. Bind it to a global"
 echo "hotkey via Shortcuts.app > New Shortcut > Run Shell Script (see vault"
 echo "README.md, 'Quick capture' section) if you want that."
+echo
+echo "To pull future improvements to the skills/pipeline into this vault later:"
+echo "  cd $SCRIPT_DIR && ./update.sh \"$VAULT_PATH\""

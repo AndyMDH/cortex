@@ -1,14 +1,138 @@
-# meeting-graph
+# Cortex
 
-Turn meeting transcripts into a growing Obsidian knowledge graph, fully local
-except for the LLM calls that do the enrichment.
+A local knowledge graph, built automatically from your meeting transcripts —
+fully local except for the LLM calls that do the enrichment.
 
-You dictate (or paste) a meeting transcript into an Obsidian note. A daily
-pipeline reads it, writes a structured summary, tags it from a controlled
-registry (no tag sprawl), links it to related meetings, and — once a topic
+**New here?** Just want to *use* Cortex → jump to [Install](#install). Want
+to *understand or modify* the code → jump to [Repo layout](#repo-layout).
+
+## The problem this solves
+
+Meeting notes rot. You dictate or paste a transcript somewhere, and it sits
+there unread — never tagged, never linked to the three other meetings about
+the same topic, never turned into something you'd actually reference again.
+
+Cortex automates the boring part: a daily pipeline reads whatever landed in
+your inbox, writes a structured summary, tags it from a controlled
+vocabulary (no tag sprawl), links it to related meetings, and — once a topic
 has enough meetings behind it — synthesizes a wiki page that becomes a hub
-node in your graph. Nothing but the transcript text touches the network, and
-only via the Anthropic API through Claude Code.
+node in your graph. The result is plain markdown files with YAML
+frontmatter, browsable and editable by hand, that Obsidian renders as a
+graph instead of a folder of unread transcripts.
+
+Nothing but the transcript text touches the network, and only via the
+Anthropic API through Claude Code.
+
+## Install
+
+**Option A — one command, sane defaults:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndyMDH/cortex/main/get.sh | bash
+```
+
+This clones the repo, scaffolds a vault at `~/Obsidian/Cortex`, seeds it
+with generic starter tags, and copies in demo transcripts so you can see the
+pipeline run end-to-end immediately. It skips git backup and the daily
+scheduler — safe, reversible choices you can turn on later (see below).
+
+**Option B — clone it yourself** if you want to review the script first or
+answer the setup questions interactively (custom vault location, starter
+tags, daily run time, git backup, scheduler):
+
+```bash
+git clone https://github.com/AndyMDH/cortex.git
+cd cortex
+./install.sh
+```
+
+Either way, once it's done:
+
+```bash
+~/Obsidian/Cortex/90-System/run.sh   # or wherever you pointed it
+```
+
+Then check `10-Meetings/` — you should see the demo transcripts enriched,
+tagged, and linked. If you see that, you're set up correctly and ready to
+point it at real meetings.
+
+Something not working? Run `~/Obsidian/Cortex/90-System/doctor.sh` — it
+checks dependencies, vault structure, and scheduler status in one shot.
+
+Day-to-day usage (dictation setup, quick capture, graph coloring) is
+documented in the vault's own generated `README.md` — read that one next.
+
+## Requirements
+
+- **macOS** (scheduling uses `launchd`; the rest is plain bash and should
+  work anywhere Claude Code runs, but this hasn't been tested off macOS)
+- **[Claude Code](https://docs.claude.com/claude-code)**, installed and
+  authenticated (`claude` on your `PATH`) — this is what does the actual
+  enrichment work
+- **[Obsidian](https://obsidian.md)** (free) — this is where you'll read
+  and browse the graph
+- **A dictation tool** that types transcribed speech into the focused text
+  field (built and tested against [Handy](https://handy.computer/); anything
+  with the same "types at cursor" behavior works)
+- **`git`**, and optionally the [`gh` CLI](https://cli.github.com/), if you
+  want git backup set up for you (Option B only — see "Customizing" below)
+
+## Repo layout
+
+Start here if you want to understand what's actually on disk before you
+change anything. Skip it if you just want to use Cortex day to day.
+
+**This repo is a one-time installer, not the thing you use daily.** You
+clone it, run it once (or via the one-liner), and it scaffolds a live
+Obsidian vault somewhere else on disk. From that point on you work *in the
+vault* — this repo only matters again if you're improving Cortex itself for
+everyone (edit here, ship the change out with `update.sh`).
+
+```
+cortex/                              <- this repo, cloned once
+  install.sh                         interactive scaffolder (the installer)
+  get.sh                             non-interactive one-liner wrapper around install.sh
+  update.sh                          re-syncs an existing vault's system files with this repo
+  demo-transcripts/                  sample transcripts copied into 00-Inbox/ on first install
+
+  vault-template/                    THE PRODUCT - copied wholesale to become your vault
+    .claude/skills/
+      meeting-enricher/SKILL.md      prompt: raw transcript -> structured, tagged, linked note
+      wiki-builder/SKILL.md          prompt: cluster of notes -> synthesized wiki hub page
+    90-System/
+      run.sh.template                -> run.sh: the daily orchestration script
+      doctor.sh                      preflight/health check, copied as-is (no substitution)
+      quick-capture.sh.template      -> quick-capture.sh: hotkey-friendly note creation
+      com.cortex.pipeline.plist.template   -> the launchd daily-schedule definition
+      templates/                     Obsidian note templates (tag / wiki / meeting / inbox)
+    00-Inbox/ 10-Meetings/ 20-Wikis/ 30-Tags/   empty scaffolds for the pipeline stages
+    README.md.template               -> becomes the vault's own day-to-day README
+```
+
+Three layers, in the order they actually run:
+
+1. **`install.sh` (this repo, runs once)** — asks a handful of questions (or
+   takes `-y` for defaults), copies `vault-template/` to your chosen path,
+   and substitutes placeholders like `{{VAULT_PATH}}` into the copy. It's a
+   stamping machine, not a long-running process — it never runs again after
+   install unless you're re-installing or updating.
+2. **The vault (`vault-template/`, once instantiated)** — plain markdown +
+   YAML frontmatter, no database. This is what you read, dictate into, and
+   browse in Obsidian every day. `.claude/skills/` holds the two prompts
+   that do all the actual thinking; everything else under it is data or
+   orchestration around them.
+3. **`run.sh` + launchd (inside the vault, runs daily)** — the only thing
+   that executes on a schedule after install. It shells out to `claude -p`
+   twice (enrich, then build wikis), syncs to git if you set that up, and
+   fires a macOS notification summarizing what happened — including a
+   distinct failure notification if either `claude` call errors, so a
+   broken run is never silent.
+
+**If you're contributing:** edit files under `vault-template/` in this
+repo, never inside an already-scaffolded vault — changes made directly in a
+vault are local to that one person and never reach anyone else. Push
+changes out to existing vaults with `update.sh` (see "Pulling in updates"
+below).
 
 ## How it works
 
@@ -30,48 +154,9 @@ dictate/paste  ->  00-Inbox/  ->  meeting-enricher  ->  10-Meetings/
   `20-Wikis/` that all of them link into — turning what would otherwise be a
   hairball of meeting-to-meeting links into a readable hub-and-spoke graph.
 - **`run.sh` + launchd**: runs both skills daily, with an early exit (no API
-  calls) if the inbox is empty, and optional git sync if you set one up.
-
-Everything is plain markdown files with YAML frontmatter — no database, no
-proprietary format, fully inspectable and editable by hand at any point.
-
-## Requirements
-
-- macOS (the scheduling piece uses `launchd`; the rest is plain bash and
-  should work anywhere Claude Code runs, but this hasn't been tested outside
-  macOS)
-- [Claude Code](https://docs.claude.com/claude-code) installed and
-  authenticated (`claude` on your `PATH`)
-- [Obsidian](https://obsidian.md) (free)
-- A dictation tool that types transcribed speech into the focused text field.
-  This was built and tested against Handy, a local speech-to-text app — but
-  anything with the same "types at cursor" behavior works the same way.
-- `git` and (optionally) the [`gh` CLI](https://cli.github.com/) if you want
-  the installer to set up a backup repo for you
-- Optional: the [Templater](https://silentvoid13.github.io/Templater/)
-  community plugin, if you want new `00-Inbox/` notes auto-stamped with a
-  capture timestamp (see "Customizing" below). Not required for the pipeline
-  itself.
-
-## Quickstart
-
-```bash
-git clone https://github.com/AndyMDH/meeting-graph.git
-cd meeting-graph
-./install.sh
-```
-
-The installer asks a handful of questions (where the vault should live,
-starter tags, daily run time, whether to set up git/GitHub, whether to load
-the daily schedule now) and scaffolds a ready-to-use vault. It defaults to
-copying in a few demo transcripts so you can see the whole pipeline run
-end-to-end before you trust it with real meetings:
-
-```bash
-~/Obsidian/MeetingGraph/90-System/run.sh   # or wherever you pointed it
-```
-
-Check `10-Meetings/` afterwards for the enriched notes.
+  calls) if the inbox is empty, and optional git sync if you set one up. A
+  failed run logs the error and notifies you distinctly from an empty-inbox
+  run — it never fails silently.
 
 ## Customizing
 
@@ -89,18 +174,7 @@ Everything that matters is plain text you're meant to edit:
   Edit them like you'd edit a prompt, because that's what they are.
 - **`90-System/run.sh`** — the schedule and orchestration. The launchd plist
   controls *when* it runs; this controls *what* runs.
-- **`90-System/templates/inbox-capture.md`** — an optional capture-timestamp
-  template. Wire it up in Obsidian if you want it: install the Templater
-  community plugin (Settings → Community plugins — requires turning off
-  Restricted Mode), then in Templater's settings set "Templates folder
-  location" to `90-System/templates`, enable "Folder templates", and add a
-  rule mapping `00-Inbox` → `90-System/templates/inbox-capture.md`. This is
-  UI-only setup the installer can't script, so it isn't automated — and
-  entirely skippable, since `meeting-enricher` infers the date on its own
-  regardless. Note `.gitignore` excludes `.obsidian/plugins/`: plugin code is
-  Obsidian-managed, not vault content, so it shouldn't get vendored into your
-  git history (and will re-download itself from Community Plugins if you ever
-  reinstall).
+- **`90-System/doctor.sh`** — preflight/health check, safe to re-run any time.
 - **`90-System/quick-capture.sh`** — creates and opens a new `00-Inbox` note
   without switching to Obsidian first. Bind it to a global hotkey via
   Shortcuts.app (see vault README) if you want one-keystroke capture from
@@ -109,6 +183,19 @@ Everything that matters is plain text you're meant to edit:
 See the vault's own `README.md` (generated by the installer) for day-to-day
 usage, the Obsidian graph-view setup, and the git-sync gotcha worth knowing
 about before you turn it on.
+
+### Pulling in updates
+
+If you installed with the one-liner and later want to pick up improvements
+to the pipeline or skills, clone the repo and run `update.sh` against your
+existing vault — it re-copies the system files (`run.sh`, `quick-capture.sh`,
+the launchd plist, `doctor.sh`, both skills) and never touches your notes:
+
+```bash
+git clone https://github.com/AndyMDH/cortex.git
+cd cortex
+./update.sh ~/Obsidian/Cortex   # or wherever your vault lives
+```
 
 ## Why this shape
 

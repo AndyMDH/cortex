@@ -14,16 +14,27 @@ cd "$VAULT"
 find 90-System/logs -name '*.log' -mtime +30 -delete
 
 PIPELINE_LOG_LINES_BEFORE="$(wc -l < 90-System/pipeline.log | tr -d ' ')"
+PIPELINE_FAILED=0
 
 # 1. Enrich + build wikis, unless inbox is empty (cheap check, no API cost)
+# Each call is guarded with `if ! ... ; then` rather than run bare, because a
+# bare non-zero exit would trigger `set -e` and kill the script immediately -
+# skipping git sync AND the notification below, so a failed run would look
+# like nothing happened at all instead of surfacing an error.
 if find 00-Inbox -maxdepth 1 -type f \( -name '*.md' -o -name '*.txt' \) | grep -q .; then
-  claude -p "Use the meeting-enricher skill to process all files in 00-Inbox/." \
+  if ! claude -p "Use the meeting-enricher skill to process all files in 00-Inbox/." \
     --allowedTools "Read,Write,Edit,Glob,Grep,Bash" \
-    --permission-mode acceptEdits >> "$LOG" 2>&1
+    --permission-mode acceptEdits >> "$LOG" 2>&1; then
+    echo "$(date -Iseconds) ERROR: meeting-enricher exited non-zero - see $LOG" >> 90-System/pipeline.log
+    PIPELINE_FAILED=1
+  fi
 
-  claude -p "Use the wiki-builder skill to create or update wiki pages based on 10-Meetings/." \
+  if [ "$PIPELINE_FAILED" -eq 0 ] && ! claude -p "Use the wiki-builder skill to create or update wiki pages based on 10-Meetings/." \
     --allowedTools "Read,Write,Edit,Glob,Grep,Bash" \
-    --permission-mode acceptEdits >> "$LOG" 2>&1
+    --permission-mode acceptEdits >> "$LOG" 2>&1; then
+    echo "$(date -Iseconds) ERROR: wiki-builder exited non-zero - see $LOG" >> 90-System/pipeline.log
+    PIPELINE_FAILED=1
+  fi
 else
   echo "$(date -Iseconds) inbox empty, nothing to do" >> 90-System/pipeline.log
 fi
@@ -50,7 +61,9 @@ NEW_LINES="$(tail -n "+$((PIPELINE_LOG_LINES_BEFORE + 1))" 90-System/pipeline.lo
 ENRICHED_COUNT="$(grep -c 'ENRICHED:' <<< "$NEW_LINES" || true)"
 WIKI_COUNT="$(grep -c 'NEW WIKI:' <<< "$NEW_LINES" || true)"
 
-if [ "$ENRICHED_COUNT" -eq 0 ]; then
+if [ "$PIPELINE_FAILED" -eq 1 ]; then
+  notify "Pipeline run failed - check 90-System/logs for details."
+elif [ "$ENRICHED_COUNT" -eq 0 ]; then
   notify "Inbox empty - nothing to process."
 else
   SUMMARY="$ENRICHED_COUNT meeting$([ "$ENRICHED_COUNT" -eq 1 ] || echo s) enriched"
