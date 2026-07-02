@@ -147,11 +147,21 @@ Not automated — set these up once in Obsidian's settings:
   - `path:20-Wikis` → another color (topic hubs)
   - `path:10-Meetings` → a third color (spokes)
 - **Core plugins**: Backlinks, Graph view, Templates. No community plugins
-  required.
+  required for the pipeline itself.
   - Optional later: Dataview (dashboards over frontmatter), Juggl (richer
     graph interaction).
 - **Templates plugin**: point at `90-System/templates/` if you want to draft
   notes manually using the same shape the pipeline produces.
+- **Optional: auto-timestamp inbox captures.** `90-System/templates/inbox-capture.md`
+  is shipped for this but not wired up automatically — it needs the
+  [Templater](https://silentvoid13.github.io/Templater/) community plugin
+  (Settings → Community plugins, turn off Restricted Mode first). In
+  Templater's settings: set "Templates folder location" to
+  `90-System/templates`, enable "Folder templates", and add a rule mapping
+  `00-Inbox` → `90-System/templates/inbox-capture.md`. Skippable —
+  `meeting-enricher` infers the date itself either way. `.gitignore` excludes
+  `.obsidian/plugins/` so plugin code never gets vendored into the vault's git
+  history.
 
 ### iCloud / sync warning
 

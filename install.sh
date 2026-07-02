@@ -153,6 +153,7 @@ if [[ "$SETUP_GIT" =~ ^[Yy] ]]; then
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 .obsidian/cache
+.obsidian/plugins/
 .trash/
 EOF
     git add -A
