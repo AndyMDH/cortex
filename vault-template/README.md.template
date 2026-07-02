@@ -1,0 +1,173 @@
+# {{VAULT_NAME}}
+
+A local knowledge graph built from meeting transcripts. A dictation tool (e.g.
+Handy, a local speech-to-text app) types transcribed speech directly into a
+new note in `00-Inbox/`, or you paste in a transcript from Teams/Zoom/
+Granola/etc. A daily pipeline enriches, tags, and links notes into a growing
+Obsidian graph, using Claude Code as the only thing that ever touches note
+content over the network.
+
+Scaffolded by [meeting-graph](https://github.com/AndyMDH/meeting-graph).
+
+## Getting started (day one)
+
+1. **Open the vault** in Obsidian: `open -a Obsidian {{VAULT_PATH}}` (or open
+   normally afterwards — Obsidian remembers it). New notes (`Cmd+N`) are
+   already configured to land in `00-Inbox/` (see `.obsidian/app.json`).
+2. **Set up your dictation tool** (Handy or similar): grant it Microphone,
+   Accessibility, and Input Monitoring permission in System Settings →
+   Privacy & Security. Without Accessibility/Input Monitoring, a global
+   hotkey may appear to fire but nothing gets typed. If your tool supports a
+   toggle/hands-free recording mode (start with one press, stop with
+   another, rather than holding a key down), turn it on in its own Settings
+   UI — much nicer for meeting-length dictation.
+3. **Capture a meeting**: `Cmd+N` in Obsidian → click into the note body →
+   trigger your dictation tool → talk → stop it → save (Obsidian autosaves).
+   Use **one note per meeting**, not a single running daily note — the
+   pipeline treats one inbox file as one meeting/topic.
+4. **Run the pipeline** on demand: `{{VAULT_PATH}}/90-System/run.sh` (add the
+   alias below for convenience). It also runs automatically once a day if you
+   load the launchd job (see "Running the pipeline").
+5. **Check the result** in `10-Meetings/` — frontmatter, tags, a structured
+   summary, and your original transcript preserved underneath. Add to your
+   shell profile:
+   ```bash
+   alias {{ALIAS_NAME}}="{{VAULT_PATH}}/90-System/run.sh"
+   ```
+
+## Folder structure
+
+```
+{{VAULT_NAME}}/
+  00-Inbox/            raw transcripts land here; pipeline consumes from here
+    duplicates/        inbox files detected as duplicates of existing meeting notes
+  10-Meetings/         enriched meeting notes (pipeline output)
+  20-Wikis/            synthesized research-area pages (hub nodes)
+  30-Tags/             one note per tag = the tag registry
+  90-System/
+    logs/              per-run pipeline logs (rotated, 30 day retention)
+    templates/         note templates
+    pipeline.log       append-only human-readable run history
+    run.sh             orchestration script
+  .claude/
+    skills/
+      meeting-enricher/  enriches inbox notes into structured, tagged meeting notes
+      wiki-builder/      synthesizes wiki hub pages once a topic has enough sources
+```
+
+## Why it's structured this way
+
+- **Tags as notes** (`30-Tags/`) make every tag a visible node in Obsidian's
+  graph, and give the agent a canonical, greppable registry it can read
+  before tagging. This is the main defense against tag sprawl: the agent can
+  only apply a tag that already exists as a file, and creating a new one is a
+  deliberate, logged act.
+- **Wikis as hub nodes** (`20-Wikis/`): once a topic accumulates enough
+  meeting notes, `wiki-builder` synthesizes a single page that many meetings
+  link into. Without this, the graph is a hairball of meeting-to-meeting
+  links; with it, wikis become readable hubs surrounded by their source
+  meetings.
+- **Numbered top-level folders** (`00-`, `10-`, `20-`...) keep the pipeline
+  stages and Obsidian's file browser in a consistent, sortable order.
+
+Your seed tag registry starts close to empty (just the system `fragment`
+tag) plus whatever starter tags you chose during install. Add real tags that
+match your own domain before your first real meeting — the registry only
+works as a sprawl-defense if it actually reflects your world.
+
+## Running the pipeline
+
+Manual run:
+
+```bash
+{{VAULT_PATH}}/90-System/run.sh
+```
+
+The pipeline can also run automatically once a day via launchd (see
+`90-System/com.meeting-graph.pipeline.plist`, installed at
+`~/Library/LaunchAgents/com.meeting-graph.pipeline.plist` if you chose to
+load it during install):
+
+```bash
+# load (start scheduling)
+launchctl load ~/Library/LaunchAgents/com.meeting-graph.pipeline.plist
+
+# unload (stop scheduling)
+launchctl unload ~/Library/LaunchAgents/com.meeting-graph.pipeline.plist
+
+# trigger one run immediately, outside the schedule
+launchctl start local.meeting-graph.pipeline
+```
+
+If the machine is asleep at the scheduled time, launchd runs the missed job
+on next wake (default `StartCalendarInterval` behavior) — no special handling
+needed.
+
+Logs:
+- `90-System/pipeline.log` — one line per meaningful event (file processed,
+  tag created, wiki created/updated, empty-inbox skip, git sync).
+- `90-System/logs/run-YYYYMMDD-HHMMSS.log` — full Claude Code output per run,
+  retained 30 days.
+- `90-System/logs/launchd.log` — stdout/stderr from launchd invocations.
+
+## Syncing to a git remote (optional)
+
+`run.sh` auto-detects whether this vault is the root of its own git repo with
+an `origin` remote configured, and if so, commits and pushes anything dirty
+at the end of each run (including manual edits you made outside the
+pipeline). If you never run `git init` here, this step silently no-ops — no
+setup required unless you want it.
+
+**Important gotcha**: `git init` this folder specifically, don't assume it's
+already a repo. If your home directory (or some parent folder) happens to be
+under git, commands run from inside this vault will silently resolve to
+*that* repo instead — meaning a commit here could sweep in unrelated files
+from way outside the vault. Always confirm with:
+
+```bash
+cd {{VAULT_PATH}} && git rev-parse --show-toplevel
+```
+
+This should print `{{VAULT_PATH}}` itself. If it prints something else (like
+your home directory), run `git init` inside the vault to give it its own
+repo before turning on sync. `run.sh`'s sync step already checks for this and
+refuses to sync if the vault isn't its own repo root, but it's worth knowing
+why.
+
+If you do set this up, use a **private** repo unless you're comfortable with
+meeting content being public — this vault will contain real transcripts.
+
+## Obsidian configuration
+
+Not automated — set these up once in Obsidian's settings:
+
+- **Graph view → Groups**: add color groups by path so the hub-and-spoke shape
+  is visible at a glance:
+  - `path:30-Tags` → one color (tag hubs)
+  - `path:20-Wikis` → another color (topic hubs)
+  - `path:10-Meetings` → a third color (spokes)
+- **Core plugins**: Backlinks, Graph view, Templates. No community plugins
+  required.
+  - Optional later: Dataview (dashboards over frontmatter), Juggl (richer
+    graph interaction).
+- **Templates plugin**: point at `90-System/templates/` if you want to draft
+  notes manually using the same shape the pipeline produces.
+
+### iCloud / sync warning
+
+If this vault lives in iCloud Drive, background sync can conflict with the
+pipeline writing/moving files mid-run (partial uploads, conflicted copies).
+Prefer a plain local folder, backed up via git (see above) or Obsidian Sync,
+rather than parking the vault directly under iCloud Drive.
+
+## Tag registry rules (enforced by `meeting-enricher`)
+
+The filenames in `30-Tags/` are the only permitted tags. New tags are
+exceptional and require all of:
+1. No existing tag covers the concept, even loosely.
+2. The concept is central to the note (would appear in a one-sentence
+   summary).
+3. At least 2 other plausible future notes would use it.
+
+Every new tag creation is logged to `90-System/pipeline.log` as
+`NEW TAG: <tag> - <justification>` for periodic review.

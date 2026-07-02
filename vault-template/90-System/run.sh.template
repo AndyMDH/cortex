@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VAULT="{{VAULT_PATH}}"
+LOG="$VAULT/90-System/logs/run-$(date +%Y%m%d-%H%M%S).log"
+
+cd "$VAULT"
+
+# Rotate logs older than 30 days
+find 90-System/logs -name '*.log' -mtime +30 -delete
+
+# 1. Enrich + build wikis, unless inbox is empty (cheap check, no API cost)
+if find 00-Inbox -maxdepth 1 -type f \( -name '*.md' -o -name '*.txt' \) | grep -q .; then
+  claude -p "Use the meeting-enricher skill to process all files in 00-Inbox/." \
+    --allowedTools "Read,Write,Edit,Glob,Grep,Bash" \
+    --permission-mode acceptEdits >> "$LOG" 2>&1
+
+  claude -p "Use the wiki-builder skill to create or update wiki pages based on 10-Meetings/." \
+    --allowedTools "Read,Write,Edit,Glob,Grep,Bash" \
+    --permission-mode acceptEdits >> "$LOG" 2>&1
+else
+  echo "$(date -Iseconds) inbox empty, nothing to do" >> 90-System/pipeline.log
+fi
+
+# 2. Sync to a git remote, but only if this vault is the root of its OWN git
+# repo (not merely inside a parent repo - e.g. a home directory that happens
+# to be under git, which would sweep in unrelated files). No-ops cleanly if
+# you never ran `git init` here.
+GIT_TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ "$GIT_TOPLEVEL" = "$VAULT" ] && git remote get-url origin >/dev/null 2>&1; then
+  if [ -n "$(git status --porcelain)" ]; then
+    git add -A
+    git commit -m "Daily sync: $(date +%Y-%m-%d)" >> "$LOG" 2>&1
+  fi
+  git push origin "$(git rev-parse --abbrev-ref HEAD)" >> "$LOG" 2>&1
+  echo "$(date -Iseconds) synced to git remote" >> 90-System/pipeline.log
+fi
+
+echo "$(date -Iseconds) run complete" >> 90-System/pipeline.log
