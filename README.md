@@ -1,4 +1,12 @@
-# Cortex
+# Cortex (archived)
+
+**Superseded by [`obsidian-cortex`](https://github.com/AndyMDH/obsidian-cortex),
+a native Obsidian plugin that does the same thing live instead of via a daily
+shell/launchd job.** This repo is kept for reference only and no longer
+maintained. If you're looking for a live vault built on this pipeline, see
+[`obsidian-brain`](https://github.com/AndyMDH/obsidian-brain).
+
+---
 
 Turn everything you dictate or paste — meeting transcripts, ideas, stray
 thoughts — into a linked, tagged Obsidian knowledge graph. A daily pipeline
@@ -8,6 +16,13 @@ I'm a consultant with back-to-back calls and no talent for note-taking.
 Cortex is the fix: capture everything, let a daily pipeline remember it.
 Nothing but the captured text touches the network, and only via the
 Anthropic API through Claude Code.
+
+## Requirements
+
+- macOS, [Claude Code](https://docs.claude.com/claude-code) (authenticated),
+  [Obsidian](https://obsidian.md), and a dictation tool (built against
+  [Handy](https://handy.computer/))
+- `git`, and optionally [`gh`](https://cli.github.com/) if you want a backup repo set up for you
 
 ## Install
 
@@ -27,13 +42,6 @@ set. Want to customize the install (vault location, tags, git backup)?
 Clone the repo and run `./install.sh` instead of the one-liner.
 
 Something broken? Run `90-System/doctor.sh` inside your vault.
-
-## Requirements
-
-- macOS, [Claude Code](https://docs.claude.com/claude-code) (authenticated),
-  [Obsidian](https://obsidian.md), and a dictation tool (built against
-  [Handy](https://handy.computer/))
-- `git`, and optionally [`gh`](https://cli.github.com/) if you want a backup repo set up for you
 
 ## How it works
 
